@@ -366,7 +366,7 @@ app.get('/api/prayers', async (request, response, next) => {
 
     const state = stateResult.rows[0]
     response.json({
-      counts: state?.counts ?? null,
+      counts: { ...EMPTY_COUNTS, ...(state?.counts ?? {}) },
       targetCount: state ? Number(state.target_count) : null,
       completedCount: state ? Number(state.completed_count) : null,
       savedAt: state?.saved_at ?? null,

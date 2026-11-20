@@ -16,6 +16,21 @@ function emptyCounts() {
   return Object.fromEntries(PRAYERS.map((name) => [name, 0]))
 }
 
+function completeCounts(counts) {
+  return Object.fromEntries(PRAYERS.map((name) => [name, counts?.[name] ?? 0]))
+}
+
+function getPendingCounts(history) {
+  return history
+    .filter((record) => !record.id)
+    .reduce((pending, record) => {
+      for (const name of PRAYERS) {
+        pending[name] += record.counts?.[name] ?? 0
+      }
+      return pending
+    }, emptyCounts())
+}
+
 function getLocalData(userId) {
   try {
     const saved = JSON.parse(localStorage.getItem(`mama-prayer-counter:${userId}`))
@@ -24,7 +39,7 @@ function getLocalData(userId) {
     )
     const targetCount = Number(saved?.targetCount)
     return {
-      counts: saved?.counts ?? emptyCounts(),
+      counts: completeCounts(saved?.counts),
       targetCount: Number.isSafeInteger(targetCount) && targetCount >= 0
         ? targetCount
         : 0,
@@ -81,11 +96,23 @@ function App() {
       try {
         const { data } = await api.get('/api/prayers')
         if (!active) return
-        setCounts(data.counts ?? localData.counts)
-        setTargetCount(data.targetCount ?? localData.targetCount)
+        const pendingCounts = getPendingCounts(localData.history)
+        const hasPendingCounts = Object.values(pendingCounts).some((value) => value > 0)
+        const serverCounts = completeCounts(data.counts ?? localData.counts)
+        setCounts(Object.fromEntries(PRAYERS.map((name) => [
+          name,
+          serverCounts[name] + pendingCounts[name],
+        ])))
+        setTargetCount(hasPendingCounts
+          ? localData.targetCount
+          : data.targetCount ?? localData.targetCount)
         setCompletedCount(data.completedCount ?? localData.completedCount)
         setHistory(Array.isArray(data.history) ? data.history : localData.history)
-        if (data.counts) setStatus('Данные загружены из PostgreSQL')
+        if (hasPendingCounts) {
+          setStatus('Локальная партия восстановлена в счётчиках. Нажмите «Сохранить партию», чтобы отправить её на сервер.')
+        } else if (data.counts) {
+          setStatus('Данные загружены из PostgreSQL')
+        }
       } catch {
         if (active) {
           setCounts(localData.counts)
@@ -168,8 +195,11 @@ function App() {
         // Server save succeeded; only the optional browser cache could not update.
       }
       setStatus('Партия сохранена в PostgreSQL')
-    } catch {
-      setStatus('Сервер недоступен: партия сохранена только в кэше браузера')
+    } catch (error) {
+      const serverError = error.response?.data?.error
+      setStatus(serverError
+        ? `Сервер отклонил партию: ${serverError}. Она сохранена только в кэше браузера.`
+        : 'Сервер недоступен: партия сохранена только в кэше браузера')
     } finally {
       setSaving(false)
     }
