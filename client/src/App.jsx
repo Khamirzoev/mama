@@ -192,6 +192,7 @@ function App() {
   }
 
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
+  const remaining = Math.max(0, targetCount - total)
   const dataLoading = Boolean(user) && loadedUserId !== user.id
 
   if (authLoading) {
@@ -265,6 +266,10 @@ function App() {
           </div>
           <p className="status" role="status">{status}</p>
           <StorList items={dataLoading ? [] : history} onClear={clearHistory} />
+          <div className="summary" aria-live="polite">
+            <span>Осталось сделать намазов</span>
+            <strong>{remaining}</strong>
+          </div>
         </main>
       </div>
     </div>
