@@ -1,6 +1,6 @@
-export function Save({ onSave }) {
+export function Save({ onSave, disabled = false }) {
   return (
-    <button className="save-button" type="button" onClick={onSave}>
+    <button className="save-button" type="button" onClick={onSave} disabled={disabled}>
       Сохранить
     </button>
   )

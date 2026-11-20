@@ -1,16 +1,23 @@
-psql -U postgres -d prayer_counter -f "C:\Users\dikin\Desktop\mama\server\schema.sql"# React + Vite
+# Счётчик намазов
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Клиентское React-приложение публикуется на GitHub Pages. Регистрация, вход, счётчики и история работают через отдельный HTTPS API-сервер с PostgreSQL; Pages сам серверную часть не запускает.
 
-Currently, two official plugins are available:
+## Локальный запуск
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Из папки `client`:
 
-## React Compiler
+```powershell
+npm ci
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Для разработки Vite проксирует `/api` на `http://localhost:3001`. Запустите API отдельно из папки `server` командой `npm run dev`.
 
-## Expanding the Oxlint configuration
+## GitHub Pages
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+1. Разверните API и PostgreSQL по инструкции [server/README.md](../server/README.md).
+2. В GitHub откройте **Settings → Secrets and variables → Actions → Variables** и добавьте переменную `VITE_API_URL` со значением HTTPS-адреса API, например `https://api.example.com` (без завершающего `/`).
+3. В **Settings → Pages** выберите источник **GitHub Actions**.
+4. Отправьте изменения в ветку `main`. Workflow автоматически соберёт и опубликует сайт.
+
+Workflow задаёт путь сайта по имени репозитория. Для надёжной работы входа настройте собственный домен для Pages и API на поддомене этого же домена, чтобы браузер не блокировал cookie как сторонние.

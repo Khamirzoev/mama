@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import axios from 'axios'
 
-const api = axios.create({ withCredentials: true })
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '',
+  withCredentials: true,
+})
 
 export function AuthForm({ onAuthenticated }) {
   const [mode, setMode] = useState('login')
@@ -16,11 +19,13 @@ export function AuthForm({ onAuthenticated }) {
     setSubmitting(true)
 
     try {
-      const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login'
+      const endpoint = mode === 'register'
+        ? '/api/auth/register'
+        : '/api/auth/login'
       const { data } = await api.post(endpoint, { email, password })
       onAuthenticated(data.user)
     } catch (requestError) {
-      setError(requestError.response?.data?.error ?? 'Не удалось связаться с сервером')
+      setError(requestError.response?.data?.error ?? 'Сервер недоступен')
     } finally {
       setSubmitting(false)
     }
@@ -87,7 +92,11 @@ export function AuthForm({ onAuthenticated }) {
             <p className="auth-hint">Минимум 8 символов</p>
           )}
           {error && <p className="auth-error" role="alert">{error}</p>}
-          <button className="save-button auth-submit" type="submit" disabled={submitting}>
+          <button
+            className="save-button auth-submit"
+            type="submit"
+            disabled={submitting}
+          >
             {submitting
               ? 'Подождите…'
               : mode === 'register'

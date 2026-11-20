@@ -32,12 +32,24 @@ const pool = new Pool({
     : {}),
 })
 
+const allowedOrigins = new Set(
+  (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+)
+
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  origin(origin, callback) {
+    callback(null, !origin || allowedOrigins.has(origin))
+  },
   credentials: true,
 }))
 app.use(express.json({ limit: '100kb' }))
 const PgSession = connectPgSimple(session)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+}
 app.use(session({
   store: new PgSession({ pool, createTableIfMissing: true }),
   secret: sessionSecret,
@@ -45,7 +57,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     secure: process.env.NODE_ENV === 'production',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
@@ -340,7 +352,7 @@ app.use((error, _request, response, _next) => {
 
 initDatabase()
   .then(() => {
-    app.listen(port, () => {
+    app.listen(port, '127.0.0.1', () => {
       console.log(`Server running on http://localhost:${port}`)
     })
   })

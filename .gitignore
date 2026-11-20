@@ -1,0 +1,7 @@
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+server/.env
+client/.env.local
+client/.env.*.local

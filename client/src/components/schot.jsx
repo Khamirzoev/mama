@@ -1,10 +1,10 @@
-export function Schot({ value, onChange }) {
+export function Schot({ value, onChange, disabled = false }) {
   return (
     <div className="counter" aria-label="Счётчик ракаатов">
       <button
         type="button"
         onClick={() => onChange(value - 1)}
-        disabled={value === 0}
+        disabled={disabled || value === 0}
         aria-label="Уменьшить"
       >
         −
@@ -13,6 +13,7 @@ export function Schot({ value, onChange }) {
       <button
         type="button"
         onClick={() => onChange(value + 1)}
+        disabled={disabled}
         aria-label="Увеличить"
       >
         +

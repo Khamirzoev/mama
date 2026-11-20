@@ -1,13 +1,16 @@
 import './App.css'
-import { Schot } from './components/schot'
-import { Save } from './components/save'
-import { StorList } from './components/storList'
-import { AuthForm } from './components/AuthForm'
 import axios from 'axios'
 import { useEffect, useState } from 'react'
+import { AuthForm } from './components/AuthForm'
+import { Save } from './components/save'
+import { Schot } from './components/schot'
+import { StorList } from './components/storList'
 
 const PRAYERS = ['Фаджр', 'Зухр', 'Аср', 'Магриб', 'Иша', 'Витр']
-const api = axios.create({ withCredentials: true })
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '',
+  withCredentials: true,
+})
 
 function emptyCounts() {
   return Object.fromEntries(PRAYERS.map((name) => [name, 0]))
@@ -16,7 +19,9 @@ function emptyCounts() {
 function getLocalData(userId) {
   try {
     const saved = JSON.parse(localStorage.getItem(`mama-prayer-counter:${userId}`))
-    const history = JSON.parse(localStorage.getItem(`mama-prayer-history:${userId}`) ?? '[]')
+    const history = JSON.parse(
+      localStorage.getItem(`mama-prayer-history:${userId}`) ?? '[]',
+    )
     return {
       counts: saved?.counts ?? emptyCounts(),
       history: Array.isArray(history) ? history : [],
@@ -66,12 +71,12 @@ function App() {
             ? data.history
             : localData.history,
         )
-        if (data.counts) setStatus('Данные загружены из базы')
+        if (data.counts) setStatus('Данные загружены из PostgreSQL')
       } catch {
         if (active) {
           setCounts(localData.counts)
           setHistory(localData.history)
-          setStatus('Сервер недоступен: показаны данные устройства')
+          setStatus('Сервер недоступен: показан локальный кэш')
         }
       } finally {
         if (active) setLoadedUserId(user.id)
@@ -100,39 +105,64 @@ function App() {
 
   async function save() {
     if (!user) return
-    const record = {
-      counts,
-      savedAt: new Date().toISOString(),
-    }
+    const record = { counts, savedAt: new Date().toISOString() }
     const storageKey = `mama-prayer-counter:${user.id}`
     const historyKey = `mama-prayer-history:${user.id}`
-    localStorage.setItem(storageKey, JSON.stringify(record))
-    const nextHistory = [record, ...history].slice(0, 10)
-    localStorage.setItem(historyKey, JSON.stringify(nextHistory))
-    setHistory(nextHistory)
+    const localHistory = [record, ...history].slice(0, 10)
+
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(record))
+      localStorage.setItem(historyKey, JSON.stringify(localHistory))
+    } catch {
+      // The server remains the primary storage if the browser cache is unavailable.
+    }
+    setHistory(localHistory)
 
     try {
       const { data } = await api.put('/api/prayers', { counts })
-      const serverHistory = [data, ...history].slice(0, 10)
-      localStorage.setItem(storageKey, JSON.stringify(data))
-      localStorage.setItem(historyKey, JSON.stringify(serverHistory))
-      setHistory(serverHistory)
+      const nextHistory = [data, ...history].slice(0, 10)
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(data))
+        localStorage.setItem(historyKey, JSON.stringify(nextHistory))
+      } catch {
+        // Server save succeeded; only the optional browser cache could not update.
+      }
+      setHistory(nextHistory)
       setStatus('Сохранено в PostgreSQL')
     } catch {
-      setStatus('Сохранено на устройстве')
+      setStatus('Сервер недоступен: данные сохранены только в кэше браузера')
     }
   }
 
   async function reset() {
     if (!user) return
     setCounts(emptyCounts())
-    localStorage.removeItem(`mama-prayer-counter:${user.id}`)
-    setStatus('Счётчики сброшены на устройстве')
+    try {
+      localStorage.removeItem(`mama-prayer-counter:${user.id}`)
+    } catch {
+      setStatus('Локальный кэш не удалось очистить')
+    }
+
     try {
       await api.delete('/api/prayers')
       setStatus('Счётчики сброшены')
     } catch {
-      setStatus('Сервер недоступен: локальные данные сброшены')
+      setStatus('Сервер недоступен: очищен только локальный кэш')
+    }
+  }
+
+  async function clearHistory() {
+    if (!user) return
+    try {
+      localStorage.removeItem(`mama-prayer-history:${user.id}`)
+    } catch {
+      setStatus('Локальную историю не удалось очистить')
+    }
+    setHistory([])
+    try {
+      await api.delete('/api/prayers/history')
+    } catch {
+      setStatus('Сервер недоступен: история очищена только в браузере')
     }
   }
 
@@ -146,17 +176,6 @@ function App() {
       setStatus('')
     } catch {
       setStatus('Не удалось выйти: сервер недоступен')
-    }
-  }
-
-  async function clearHistory() {
-    if (!user) return
-    localStorage.removeItem(`mama-prayer-history:${user.id}`)
-    setHistory([])
-    try {
-      await api.delete('/api/prayers/history')
-    } catch {
-      setStatus('История очищена на устройстве, но не на сервере')
     }
   }
 
@@ -192,6 +211,7 @@ function App() {
                 <Schot
                   value={counts[name] ?? 0}
                   onChange={(nextValue) => changeCount(name, nextValue)}
+                  disabled={dataLoading}
                 />
               </div>
             ))}
@@ -203,13 +223,18 @@ function App() {
           </div>
 
           <div className="actions">
-            <Save onSave={save} />
-            <button className="reset-button" type="button" onClick={reset}>
+            <Save onSave={save} disabled={dataLoading} />
+            <button
+              className="reset-button"
+              type="button"
+              onClick={reset}
+              disabled={dataLoading}
+            >
               Сбросить
             </button>
           </div>
           <p className="status" role="status">{status}</p>
-          <StorList items={history} onClear={clearHistory} />
+          <StorList items={dataLoading ? [] : history} onClear={clearHistory} />
         </main>
       </div>
     </div>
