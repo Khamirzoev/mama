@@ -153,6 +153,32 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.target-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  color: #486151;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.target-field input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid #d8e1d8;
+  border-radius: 10px;
+  outline: none;
+  background: #fbfcfa;
+  color: #27332c;
+  font: inherit;
+}
+
+.target-field input:focus {
+  border-color: #6d9276;
+  box-shadow: 0 0 0 3px rgba(109, 146, 118, 0.15);
+}
+
 .summary {
   display: flex;
   align-items: center;

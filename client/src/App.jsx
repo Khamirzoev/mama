@@ -22,12 +22,16 @@ function getLocalData(userId) {
     const history = JSON.parse(
       localStorage.getItem(`mama-prayer-history:${userId}`) ?? '[]',
     )
+    const targetCount = Number(saved?.targetCount)
     return {
       counts: saved?.counts ?? emptyCounts(),
+      targetCount: Number.isSafeInteger(targetCount) && targetCount >= 0
+        ? targetCount
+        : 0,
       history: Array.isArray(history) ? history : [],
     }
   } catch {
-    return { counts: emptyCounts(), history: [] }
+    return { counts: emptyCounts(), targetCount: 0, history: [] }
   }
 }
 
@@ -36,6 +40,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [loadedUserId, setLoadedUserId] = useState(null)
   const [counts, setCounts] = useState(emptyCounts)
+  const [targetCount, setTargetCount] = useState(0)
   const [status, setStatus] = useState('')
   const [history, setHistory] = useState([])
 
@@ -66,6 +71,7 @@ function App() {
         const { data } = await api.get('/api/prayers')
         if (!active) return
         setCounts(data.counts ?? localData.counts)
+        setTargetCount(data.targetCount ?? localData.targetCount)
         setHistory(
           Array.isArray(data.history) && data.history.length
             ? data.history
@@ -75,6 +81,7 @@ function App() {
       } catch {
         if (active) {
           setCounts(localData.counts)
+          setTargetCount(localData.targetCount)
           setHistory(localData.history)
           setStatus('Сервер недоступен: показан локальный кэш')
         }
@@ -105,7 +112,7 @@ function App() {
 
   async function save() {
     if (!user) return
-    const record = { counts, savedAt: new Date().toISOString() }
+    const record = { counts, targetCount, savedAt: new Date().toISOString() }
     const storageKey = `mama-prayer-counter:${user.id}`
     const historyKey = `mama-prayer-history:${user.id}`
     const localHistory = [record, ...history].slice(0, 10)
@@ -119,7 +126,7 @@ function App() {
     setHistory(localHistory)
 
     try {
-      const { data } = await api.put('/api/prayers', { counts })
+      const { data } = await api.put('/api/prayers', { counts, targetCount })
       const nextHistory = [data, ...history].slice(0, 10)
       try {
         localStorage.setItem(storageKey, JSON.stringify(data))
@@ -136,15 +143,19 @@ function App() {
 
   async function reset() {
     if (!user) return
-    setCounts(emptyCounts())
+    const nextCounts = emptyCounts()
+    setCounts(nextCounts)
     try {
-      localStorage.removeItem(`mama-prayer-counter:${user.id}`)
+      localStorage.setItem(
+        `mama-prayer-counter:${user.id}`,
+        JSON.stringify({ counts: nextCounts, targetCount }),
+      )
     } catch {
       setStatus('Локальный кэш не удалось очистить')
     }
 
     try {
-      await api.delete('/api/prayers')
+      await api.delete('/api/prayers', { data: { targetCount } })
       setStatus('Счётчики сброшены')
     } catch {
       setStatus('Сервер недоступен: очищен только локальный кэш')
@@ -172,6 +183,7 @@ function App() {
       setUser(null)
       setLoadedUserId(null)
       setCounts(emptyCounts())
+      setTargetCount(0)
       setHistory([])
       setStatus('')
     } catch {
@@ -217,8 +229,26 @@ function App() {
             ))}
           </div>
 
+          <div className="target-field">
+            <label htmlFor="target-prayers">Всего надо сделать намазов</label>
+            <input
+              id="target-prayers"
+              type="number"
+              min="0"
+              step="1"
+              value={targetCount}
+              onChange={(event) => {
+                const nextValue = Number(event.currentTarget.value)
+                if (Number.isSafeInteger(nextValue) && nextValue >= 0) {
+                  setTargetCount(nextValue)
+                }
+              }}
+              disabled={dataLoading}
+            />
+          </div>
+
           <div className="summary">
-            <span>Всего ракаатов</span>
+            <span>Всего сделано намазов</span>
             <strong>{total}</strong>
           </div>
 

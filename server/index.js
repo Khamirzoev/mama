@@ -75,8 +75,12 @@ async function initDatabase() {
     CREATE TABLE IF NOT EXISTS user_prayer_state (
       user_id BIGINT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
       counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+      target_count BIGINT NOT NULL DEFAULT 0,
       saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE user_prayer_state
+      ADD COLUMN IF NOT EXISTS target_count BIGINT NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS user_prayer_history (
       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -233,7 +237,7 @@ app.get('/api/prayers', async (request, response, next) => {
   try {
     const [stateResult, historyResult] = await Promise.all([
       pool.query(`
-        SELECT counts, saved_at
+        SELECT counts, target_count, saved_at
         FROM user_prayer_state
         WHERE user_id = $1
       `, [request.session.userId]),
@@ -249,6 +253,7 @@ app.get('/api/prayers', async (request, response, next) => {
     const state = stateResult.rows[0]
     response.json({
       counts: state?.counts ?? null,
+      targetCount: state ? Number(state.target_count) : null,
       savedAt: state?.saved_at ?? null,
       history: historyResult.rows.map((item) => ({
         counts: item.counts,
@@ -261,8 +266,17 @@ app.get('/api/prayers', async (request, response, next) => {
 })
 
 app.put('/api/prayers', async (request, response, next) => {
-  const { counts } = request.body ?? {}
+  const { counts, targetCount } = request.body ?? {}
   const prayerNames = ['Фаджр', 'Зухр', 'Аср', 'Магриб', 'Иша', 'Витр']
+
+  if (
+    targetCount !== undefined &&
+    (!Number.isSafeInteger(targetCount) || targetCount < 0)
+  ) {
+    return response.status(400).json({
+      error: 'targetCount must be a non-negative safe integer',
+    })
+  }
 
   if (
     !counts ||
@@ -282,15 +296,19 @@ app.put('/api/prayers', async (request, response, next) => {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query(
+      const stateResult = await client.query(
         `
-          INSERT INTO user_prayer_state (user_id, counts, saved_at)
-          VALUES ($1, $2::jsonb, $3)
+          INSERT INTO user_prayer_state (
+            user_id, counts, target_count, saved_at
+          )
+          VALUES ($1, $2::jsonb, COALESCE($3::bigint, 0), $4)
           ON CONFLICT (user_id) DO UPDATE
           SET counts = EXCLUDED.counts,
+              target_count = COALESCE($3::bigint, user_prayer_state.target_count),
               saved_at = EXCLUDED.saved_at
+          RETURNING target_count
         `,
-        [request.session.userId, JSON.stringify(counts), savedAt],
+        [request.session.userId, JSON.stringify(counts), targetCount ?? null, savedAt],
       )
       await client.query(
         'INSERT INTO user_prayer_history (user_id, counts, saved_at) VALUES ($1, $2::jsonb, $3)',
@@ -317,17 +335,41 @@ app.put('/api/prayers', async (request, response, next) => {
       client.release()
     }
 
-    response.json({ counts, savedAt })
+    response.json({
+      counts,
+      targetCount: Number(stateResult.rows[0].target_count),
+      savedAt,
+    })
   } catch (error) {
     next(error)
   }
 })
 
 app.delete('/api/prayers', async (request, response, next) => {
+  const { targetCount } = request.body ?? {}
+  if (
+    targetCount !== undefined &&
+    (!Number.isSafeInteger(targetCount) || targetCount < 0)
+  ) {
+    return response.status(400).json({
+      error: 'targetCount must be a non-negative safe integer',
+    })
+  }
+
   try {
-    await pool.query('DELETE FROM user_prayer_state WHERE user_id = $1', [
-      request.session.userId,
-    ])
+    await pool.query(
+      `
+        INSERT INTO user_prayer_state (
+          user_id, counts, target_count, saved_at
+        )
+        VALUES ($1, '{}'::jsonb, COALESCE($2::bigint, 0), NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET counts = '{}'::jsonb,
+            target_count = COALESCE($2::bigint, user_prayer_state.target_count),
+            saved_at = NOW()
+      `,
+      [request.session.userId, targetCount ?? null],
+    )
     response.status(204).end()
   } catch (error) {
     next(error)

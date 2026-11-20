@@ -1,6 +1,6 @@
 export function Schot({ value, onChange, disabled = false }) {
   return (
-    <div className="counter" aria-label="Счётчик ракаатов">
+    <div className="counter" aria-label="Счётчик намазов">
       <button
         type="button"
         onClick={() => onChange(value - 1)}
