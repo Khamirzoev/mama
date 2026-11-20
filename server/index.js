@@ -10,6 +10,12 @@ const { Pool } = pg
 const app = express()
 const port = Number(process.env.PORT) || 3001
 const sessionSecret = process.env.SESSION_SECRET
+const PRAYER_NAMES = ['Фаджр', 'Зухр', 'Аср', 'Магриб', 'Иша', 'Витр']
+const EMPTY_COUNTS = Object.fromEntries(PRAYER_NAMES.map((name) => [name, 0]))
+
+function sumPrayerCounts(counts) {
+  return PRAYER_NAMES.reduce((sum, name) => sum + Number(counts?.[name] ?? 0), 0)
+}
 
 if (
   !sessionSecret ||
@@ -76,22 +82,130 @@ async function initDatabase() {
       user_id BIGINT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
       counts JSONB NOT NULL DEFAULT '{}'::jsonb,
       target_count BIGINT NOT NULL DEFAULT 0,
+      completed_count BIGINT NOT NULL DEFAULT 0,
       saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     ALTER TABLE user_prayer_state
       ADD COLUMN IF NOT EXISTS target_count BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE user_prayer_state
+      ADD COLUMN IF NOT EXISTS completed_count BIGINT NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS user_prayer_history (
       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
       counts JSONB NOT NULL,
+      is_batch BOOLEAN NOT NULL DEFAULT FALSE,
       saved_at TIMESTAMPTZ NOT NULL
     );
 
+    ALTER TABLE user_prayer_history
+      ADD COLUMN IF NOT EXISTS is_batch BOOLEAN NOT NULL DEFAULT FALSE;
+
     CREATE INDEX IF NOT EXISTS user_prayer_history_user_saved_idx
       ON user_prayer_history (user_id, saved_at DESC);
+
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `)
+
+  await migrateLegacyPrayerProgress()
+}
+
+async function migrateLegacyPrayerProgress() {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const migration = await client.query(
+      'SELECT 1 FROM app_migrations WHERE name = $1',
+      ['saved-prayer-batches-v1'],
+    )
+
+    if (migration.rowCount === 0) {
+      const historyResult = await client.query(`
+        SELECT id, user_id, counts, saved_at
+        FROM user_prayer_history
+        ORDER BY user_id, saved_at, id
+      `)
+      const previousCounts = new Map()
+      const completedByUser = new Map()
+
+      for (const record of historyResult.rows) {
+        const userId = String(record.user_id)
+        const previous = previousCounts.get(userId)
+        const batchCounts = {}
+        for (const name of PRAYER_NAMES) {
+          const current = Number(record.counts?.[name] ?? 0)
+          batchCounts[name] = previous && current >= previous[name]
+            ? current - previous[name]
+            : current
+        }
+        previousCounts.set(userId, record.counts)
+        completedByUser.set(
+          userId,
+          (completedByUser.get(userId) ?? 0) + sumPrayerCounts(batchCounts),
+        )
+        await client.query(
+          `
+            UPDATE user_prayer_history
+            SET counts = $1::jsonb, is_batch = TRUE
+            WHERE id = $2
+          `,
+          [JSON.stringify(batchCounts), record.id],
+        )
+      }
+
+      const stateResult = await client.query(
+        'SELECT user_id, counts FROM user_prayer_state',
+      )
+      const existingUsers = new Set()
+      for (const state of stateResult.rows) {
+        const userId = String(state.user_id)
+        existingUsers.add(userId)
+        const completedCount = completedByUser.has(userId)
+          ? completedByUser.get(userId)
+          : sumPrayerCounts(state.counts)
+        await client.query(
+          `
+            UPDATE user_prayer_state
+            SET counts = '{}'::jsonb, completed_count = $2::bigint
+            WHERE user_id = $1
+          `,
+          [state.user_id, completedCount],
+        )
+      }
+
+      for (const [userId, completedCount] of completedByUser) {
+        if (existingUsers.has(userId)) continue
+        const latest = historyResult.rows
+          .filter((record) => String(record.user_id) === userId)
+          .at(-1)
+        await client.query(
+          `
+            INSERT INTO user_prayer_state (
+              user_id, counts, target_count, completed_count, saved_at
+            )
+            VALUES ($1, '{}'::jsonb, 0, $2::bigint, $3)
+          `,
+          [userId, completedCount, latest?.saved_at ?? new Date()],
+        )
+      }
+
+      await client.query(
+        'INSERT INTO app_migrations (name) VALUES ($1)',
+        ['saved-prayer-batches-v1'],
+      )
+    }
+
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 function requireAuth(request, response, next) {
@@ -237,15 +351,15 @@ app.get('/api/prayers', async (request, response, next) => {
   try {
     const [stateResult, historyResult] = await Promise.all([
       pool.query(`
-        SELECT counts, target_count, saved_at
+        SELECT counts, target_count, completed_count, saved_at
         FROM user_prayer_state
         WHERE user_id = $1
       `, [request.session.userId]),
       pool.query(`
-        SELECT counts, saved_at
+        SELECT id, counts, saved_at
         FROM user_prayer_history
         WHERE user_id = $1
-        ORDER BY saved_at DESC
+        ORDER BY saved_at DESC, id DESC
         LIMIT 10
       `, [request.session.userId]),
     ])
@@ -254,8 +368,10 @@ app.get('/api/prayers', async (request, response, next) => {
     response.json({
       counts: state?.counts ?? null,
       targetCount: state ? Number(state.target_count) : null,
+      completedCount: state ? Number(state.completed_count) : null,
       savedAt: state?.saved_at ?? null,
       history: historyResult.rows.map((item) => ({
+        id: item.id,
         counts: item.counts,
         savedAt: item.saved_at,
       })),
@@ -267,7 +383,6 @@ app.get('/api/prayers', async (request, response, next) => {
 
 app.put('/api/prayers', async (request, response, next) => {
   const { counts, targetCount } = request.body ?? {}
-  const prayerNames = ['Фаджр', 'Зухр', 'Аср', 'Магриб', 'Иша', 'Витр']
 
   if (
     targetCount !== undefined &&
@@ -281,52 +396,68 @@ app.put('/api/prayers', async (request, response, next) => {
   if (
     !counts ||
     typeof counts !== 'object' ||
-    prayerNames.some(
-      (name) => !Number.isInteger(counts[name]) || counts[name] < 0,
+    PRAYER_NAMES.some(
+      (name) => !Number.isSafeInteger(counts[name]) || counts[name] < 0,
     )
   ) {
     return response.status(400).json({
-      error: 'counts must contain non-negative integer values for every prayer',
+      error: 'counts must contain non-negative safe integers for every prayer',
     })
+  }
+
+  const batchTotal = sumPrayerCounts(counts)
+  if (!Number.isSafeInteger(batchTotal)) {
+    return response.status(400).json({ error: 'The saved batch is too large' })
   }
 
   const savedAt = new Date()
 
   try {
     const client = await pool.connect()
+    let historyRecord = null
+    let state
     try {
       await client.query('BEGIN')
       const stateResult = await client.query(
         `
           INSERT INTO user_prayer_state (
-            user_id, counts, target_count, saved_at
+            user_id, counts, target_count, completed_count, saved_at
           )
-          VALUES ($1, $2::jsonb, COALESCE($3::bigint, 0), $4)
+          VALUES ($1, '{}'::jsonb, COALESCE($2::bigint, 0), $3::bigint, $4)
           ON CONFLICT (user_id) DO UPDATE
-          SET counts = EXCLUDED.counts,
-              target_count = COALESCE($3::bigint, user_prayer_state.target_count),
+          SET counts = '{}'::jsonb,
+              target_count = COALESCE($2::bigint, user_prayer_state.target_count),
+              completed_count = user_prayer_state.completed_count + $3::bigint,
               saved_at = EXCLUDED.saved_at
-          RETURNING target_count
+          RETURNING target_count, completed_count
         `,
-        [request.session.userId, JSON.stringify(counts), targetCount ?? null, savedAt],
+        [request.session.userId, targetCount ?? null, batchTotal, savedAt],
       )
-      await client.query(
-        'INSERT INTO user_prayer_history (user_id, counts, saved_at) VALUES ($1, $2::jsonb, $3)',
-        [request.session.userId, JSON.stringify(counts), savedAt],
-      )
-      await client.query(
-        `
-          DELETE FROM user_prayer_history
-          WHERE id IN (
-            SELECT id
-            FROM user_prayer_history
-            WHERE user_id = $1
-            ORDER BY saved_at DESC
-            OFFSET 10
-          )
-        `,
-        [request.session.userId],
-      )
+      state = stateResult.rows[0]
+      if (batchTotal > 0) {
+        const historyResult = await client.query(
+          `
+            INSERT INTO user_prayer_history (user_id, counts, is_batch, saved_at)
+            VALUES ($1, $2::jsonb, TRUE, $3)
+            RETURNING id, saved_at
+          `,
+          [request.session.userId, JSON.stringify(counts), savedAt],
+        )
+        historyRecord = historyResult.rows[0]
+        await client.query(
+          `
+            DELETE FROM user_prayer_history
+            WHERE id IN (
+              SELECT id
+              FROM user_prayer_history
+              WHERE user_id = $1
+              ORDER BY id DESC
+              OFFSET 10
+            )
+          `,
+          [request.session.userId],
+        )
+      }
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -336,9 +467,17 @@ app.put('/api/prayers', async (request, response, next) => {
     }
 
     response.json({
-      counts,
-      targetCount: Number(stateResult.rows[0].target_count),
-      savedAt,
+      savedBatch: historyRecord
+        ? {
+            id: historyRecord.id,
+            counts,
+            savedAt: historyRecord.saved_at,
+          }
+        : null,
+      counts: EMPTY_COUNTS,
+      targetCount: Number(state.target_count),
+      completedCount: Number(state.completed_count),
+      savedAt: historyRecord?.saved_at ?? savedAt,
     })
   } catch (error) {
     next(error)
@@ -360,9 +499,9 @@ app.delete('/api/prayers', async (request, response, next) => {
     await pool.query(
       `
         INSERT INTO user_prayer_state (
-          user_id, counts, target_count, saved_at
+          user_id, counts, target_count, completed_count, saved_at
         )
-        VALUES ($1, '{}'::jsonb, COALESCE($2::bigint, 0), NOW())
+        VALUES ($1, '{}'::jsonb, COALESCE($2::bigint, 0), 0, NOW())
         ON CONFLICT (user_id) DO UPDATE
         SET counts = '{}'::jsonb,
             target_count = COALESCE($2::bigint, user_prayer_state.target_count),
@@ -376,14 +515,88 @@ app.delete('/api/prayers', async (request, response, next) => {
   }
 })
 
-app.delete('/api/prayers/history', async (request, response, next) => {
+app.delete('/api/prayers/history/:historyId', async (request, response, next) => {
+  const { historyId } = request.params
+  if (!/^\d+$/.test(historyId)) {
+    return response.status(400).json({ error: 'Invalid save id' })
+  }
+
+  const client = await pool.connect()
   try {
-    await pool.query('DELETE FROM user_prayer_history WHERE user_id = $1', [
-      request.session.userId,
-    ])
+    await client.query('BEGIN')
+    await client.query(
+      'SELECT user_id FROM user_prayer_state WHERE user_id = $1 FOR UPDATE',
+      [request.session.userId],
+    )
+    const historyResult = await client.query(
+      `
+        SELECT counts, is_batch
+        FROM user_prayer_history
+        WHERE id = $1 AND user_id = $2
+        FOR UPDATE
+      `,
+      [historyId, request.session.userId],
+    )
+    if (!historyResult.rows[0]) {
+      await client.query('ROLLBACK')
+      return response.status(404).json({ error: 'Сохранение не найдено' })
+    }
+
+    const record = historyResult.rows[0]
+    const batchTotal = record.is_batch ? sumPrayerCounts(record.counts) : 0
+    await client.query(
+      'DELETE FROM user_prayer_history WHERE id = $1 AND user_id = $2',
+      [historyId, request.session.userId],
+    )
+    if (batchTotal > 0) {
+      await client.query(
+        `
+          UPDATE user_prayer_state
+          SET completed_count = GREATEST(0, completed_count - $2::bigint)
+          WHERE user_id = $1
+        `,
+        [request.session.userId, batchTotal],
+      )
+    }
+    const stateResult = await client.query(
+      'SELECT completed_count FROM user_prayer_state WHERE user_id = $1',
+      [request.session.userId],
+    )
+    await client.query('COMMIT')
+    response.json({
+      completedCount: Number(stateResult.rows[0]?.completed_count ?? 0),
+    })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    next(error)
+  } finally {
+    client.release()
+  }
+})
+
+app.delete('/api/prayers/history', async (request, response, next) => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      'SELECT user_id FROM user_prayer_state WHERE user_id = $1 FOR UPDATE',
+      [request.session.userId],
+    )
+    await client.query(
+      'DELETE FROM user_prayer_history WHERE user_id = $1',
+      [request.session.userId],
+    )
+    await client.query(
+      'UPDATE user_prayer_state SET completed_count = 0 WHERE user_id = $1',
+      [request.session.userId],
+    )
+    await client.query('COMMIT')
     response.status(204).end()
   } catch (error) {
+    await client.query('ROLLBACK')
     next(error)
+  } finally {
+    client.release()
   }
 })
 

@@ -28,10 +28,19 @@ function getLocalData(userId) {
       targetCount: Number.isSafeInteger(targetCount) && targetCount >= 0
         ? targetCount
         : 0,
+      completedCount: Number.isSafeInteger(saved?.completedCount) &&
+        saved.completedCount >= 0
+        ? saved.completedCount
+        : 0,
       history: Array.isArray(history) ? history : [],
     }
   } catch {
-    return { counts: emptyCounts(), targetCount: 0, history: [] }
+    return {
+      counts: emptyCounts(),
+      targetCount: 0,
+      completedCount: 0,
+      history: [],
+    }
   }
 }
 
@@ -41,6 +50,8 @@ function App() {
   const [loadedUserId, setLoadedUserId] = useState(null)
   const [counts, setCounts] = useState(emptyCounts)
   const [targetCount, setTargetCount] = useState(0)
+  const [completedCount, setCompletedCount] = useState(0)
+  const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('')
   const [history, setHistory] = useState([])
 
@@ -72,16 +83,14 @@ function App() {
         if (!active) return
         setCounts(data.counts ?? localData.counts)
         setTargetCount(data.targetCount ?? localData.targetCount)
-        setHistory(
-          Array.isArray(data.history) && data.history.length
-            ? data.history
-            : localData.history,
-        )
+        setCompletedCount(data.completedCount ?? localData.completedCount)
+        setHistory(Array.isArray(data.history) ? data.history : localData.history)
         if (data.counts) setStatus('Данные загружены из PostgreSQL')
       } catch {
         if (active) {
           setCounts(localData.counts)
           setTargetCount(localData.targetCount)
+          setCompletedCount(localData.completedCount)
           setHistory(localData.history)
           setStatus('Сервер недоступен: показан локальный кэш')
         }
@@ -111,33 +120,58 @@ function App() {
   }
 
   async function save() {
-    if (!user) return
-    const record = { counts, targetCount, savedAt: new Date().toISOString() }
+    if (!user || saving) return
+    const batchCounts = counts
+    const batchTotal = Object.values(batchCounts).reduce((sum, value) => sum + value, 0)
+    const savedAt = new Date().toISOString()
     const storageKey = `mama-prayer-counter:${user.id}`
     const historyKey = `mama-prayer-history:${user.id}`
-    const localHistory = [record, ...history].slice(0, 10)
+    const localRecord = { counts: batchCounts, savedAt }
+    const localHistory = batchTotal > 0
+      ? [localRecord, ...history].slice(0, 10)
+      : history
+    const nextCompletedCount = completedCount + batchTotal
+    const nextCounts = emptyCounts()
 
+    setSaving(true)
+    setCounts(nextCounts)
+    setCompletedCount(nextCompletedCount)
+    setHistory(localHistory)
     try {
-      localStorage.setItem(storageKey, JSON.stringify(record))
+      localStorage.setItem(storageKey, JSON.stringify({
+        counts: nextCounts,
+        targetCount,
+        completedCount: nextCompletedCount,
+        savedAt,
+      }))
       localStorage.setItem(historyKey, JSON.stringify(localHistory))
     } catch {
       // The server remains the primary storage if the browser cache is unavailable.
     }
-    setHistory(localHistory)
 
     try {
-      const { data } = await api.put('/api/prayers', { counts, targetCount })
-      const nextHistory = [data, ...history].slice(0, 10)
+      const { data } = await api.put('/api/prayers', {
+        counts: batchCounts,
+        targetCount,
+      })
+      const nextHistory = data.savedBatch
+        ? [data.savedBatch, ...history].slice(0, 10)
+        : history
+      setCounts(data.counts ?? nextCounts)
+      setCompletedCount(data.completedCount)
+      setTargetCount(data.targetCount)
+      setHistory(nextHistory)
       try {
         localStorage.setItem(storageKey, JSON.stringify(data))
         localStorage.setItem(historyKey, JSON.stringify(nextHistory))
       } catch {
         // Server save succeeded; only the optional browser cache could not update.
       }
-      setHistory(nextHistory)
-      setStatus('Сохранено в PostgreSQL')
+      setStatus('Партия сохранена в PostgreSQL')
     } catch {
-      setStatus('Сервер недоступен: данные сохранены только в кэше браузера')
+      setStatus('Сервер недоступен: партия сохранена только в кэше браузера')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -148,7 +182,7 @@ function App() {
     try {
       localStorage.setItem(
         `mama-prayer-counter:${user.id}`,
-        JSON.stringify({ counts: nextCounts, targetCount }),
+        JSON.stringify({ counts: nextCounts, targetCount, completedCount }),
       )
     } catch {
       setStatus('Локальный кэш не удалось очистить')
@@ -164,16 +198,64 @@ function App() {
 
   async function clearHistory() {
     if (!user) return
-    try {
-      localStorage.removeItem(`mama-prayer-history:${user.id}`)
-    } catch {
-      setStatus('Локальную историю не удалось очистить')
-    }
+    setCompletedCount(0)
     setHistory([])
     try {
+      localStorage.removeItem(`mama-prayer-history:${user.id}`)
+      localStorage.setItem(
+        `mama-prayer-counter:${user.id}`,
+        JSON.stringify({ counts, targetCount, completedCount: 0 }),
+      )
+    } catch {
+      setStatus('Локальный кэш не удалось очистить')
+    }
+    try {
       await api.delete('/api/prayers/history')
+      setStatus('История и сохранённый прогресс очищены')
     } catch {
       setStatus('Сервер недоступен: история очищена только в браузере')
+    }
+  }
+
+  async function deleteSave(item) {
+    if (!user) return
+    const savedCount = Object.values(item.counts).reduce(
+      (sum, value) => sum + value,
+      0,
+    )
+    let nextCompletedCount
+
+    if (item.id) {
+      try {
+        const { data } = await api.delete(`/api/prayers/history/${item.id}`)
+        nextCompletedCount = data.completedCount
+      } catch {
+        setStatus('Не удалось удалить сохранение с сервера')
+        return
+      }
+    } else {
+      nextCompletedCount = Math.max(0, completedCount - savedCount)
+    }
+
+    const nextHistory = history.filter((record) => (
+      item.id
+        ? String(record.id) !== String(item.id)
+        : record.savedAt !== item.savedAt
+    ))
+    setHistory(nextHistory)
+    setCompletedCount(nextCompletedCount)
+    try {
+      localStorage.setItem(
+        `mama-prayer-counter:${user.id}`,
+        JSON.stringify({ counts, targetCount, completedCount: nextCompletedCount }),
+      )
+      localStorage.setItem(
+        `mama-prayer-history:${user.id}`,
+        JSON.stringify(nextHistory),
+      )
+      setStatus('Сохранение удалено')
+    } catch {
+      setStatus('Сохранение удалено, но локальный кэш не обновлён')
     }
   }
 
@@ -184,6 +266,7 @@ function App() {
       setLoadedUserId(null)
       setCounts(emptyCounts())
       setTargetCount(0)
+      setCompletedCount(0)
       setHistory([])
       setStatus('')
     } catch {
@@ -192,7 +275,8 @@ function App() {
   }
 
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
-  const remaining = Math.max(0, targetCount - total)
+  const totalDone = completedCount + total
+  const remaining = Math.max(0, targetCount - totalDone)
   const dataLoading = Boolean(user) && loadedUserId !== user.id
 
   if (authLoading) {
@@ -224,7 +308,7 @@ function App() {
                 <Schot
                   value={counts[name] ?? 0}
                   onChange={(nextValue) => changeCount(name, nextValue)}
-                  disabled={dataLoading}
+                  disabled={dataLoading || saving}
                 />
               </div>
             ))}
@@ -244,28 +328,33 @@ function App() {
                   setTargetCount(nextValue)
                 }
               }}
-              disabled={dataLoading}
+              disabled={dataLoading || saving}
             />
           </div>
 
           <div className="summary">
             <span>Всего сделано намазов</span>
-            <strong>{total}</strong>
+            <strong>{totalDone}</strong>
           </div>
 
           <div className="actions">
-            <Save onSave={save} disabled={dataLoading} />
+            <Save onSave={save} disabled={dataLoading || saving} />
             <button
               className="reset-button"
               type="button"
               onClick={reset}
-              disabled={dataLoading}
+              disabled={dataLoading || saving}
             >
               Сбросить
             </button>
           </div>
           <p className="status" role="status">{status}</p>
-          <StorList items={dataLoading ? [] : history} onClear={clearHistory} />
+          <StorList
+            items={dataLoading ? [] : history}
+            onClear={clearHistory}
+            onDelete={deleteSave}
+            showClear={completedCount > 0}
+          />
           <div className="summary" aria-live="polite">
             <span>Осталось сделать намазов</span>
             <strong>{remaining}</strong>

@@ -9,18 +9,30 @@ CREATE TABLE IF NOT EXISTS user_prayer_state (
   user_id BIGINT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
   counts JSONB NOT NULL DEFAULT '{}'::jsonb,
   target_count BIGINT NOT NULL DEFAULT 0,
+  completed_count BIGINT NOT NULL DEFAULT 0,
   saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE user_prayer_state
   ADD COLUMN IF NOT EXISTS target_count BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE user_prayer_state
+  ADD COLUMN IF NOT EXISTS completed_count BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS user_prayer_history (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   counts JSONB NOT NULL,
+  is_batch BOOLEAN NOT NULL DEFAULT FALSE,
   saved_at TIMESTAMPTZ NOT NULL
 );
 
+ALTER TABLE user_prayer_history
+  ADD COLUMN IF NOT EXISTS is_batch BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS user_prayer_history_user_saved_idx
   ON user_prayer_history (user_id, saved_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

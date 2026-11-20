@@ -1,5 +1,5 @@
-export function StorList({ items, onClear }) {
-  if (!items.length) return null
+export function StorList({ items, onClear, onDelete, showClear }) {
+  if (!items.length && !showClear) return null
 
   function prayerWord(count) {
     const lastTwoDigits = count % 100
@@ -21,7 +21,7 @@ export function StorList({ items, onClear }) {
     <section className="history">
       <div className="history-heading">
         <h2>Последние сохранения</h2>
-        <button type="button" onClick={onClear}>Очистить</button>
+        <button type="button" onClick={onClear}>Удалить все сохранения</button>
       </div>
       <div className="history-list">
         {items.map((item) => {
@@ -37,9 +37,16 @@ export function StorList({ items, onClear }) {
           }).format(new Date(item.savedAt))
 
           return (
-            <div className="history-item" key={item.savedAt}>
+            <div className="history-item" key={item.id ?? item.savedAt}>
               <span>{date}</span>
               <strong>{total} {prayerWord(total)}</strong>
+              <button
+                type="button"
+                onClick={() => onDelete(item)}
+                aria-label={`Удалить сохранение от ${date}`}
+              >
+                Удалить
+              </button>
             </div>
           )
         })}
