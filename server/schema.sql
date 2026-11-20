@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS app_users (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_prayer_state (
+  user_id BIGINT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+  counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+  saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_prayer_history (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  counts JSONB NOT NULL,
+  saved_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS user_prayer_history_user_saved_idx
+  ON user_prayer_history (user_id, saved_at DESC);

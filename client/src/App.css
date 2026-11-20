@@ -1,0 +1,368 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #27332c;
+  background: #eef3ec;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.95), transparent 25rem),
+    linear-gradient(145deg, #edf4ec 0%, #dfeadf 100%);
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+}
+
+.prayer-card {
+  width: min(100%, 520px);
+  overflow: hidden;
+  border: 1px solid rgba(60, 95, 74, 0.12);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 70px rgba(54, 82, 62, 0.16);
+  backdrop-filter: blur(12px);
+}
+
+.header {
+  padding: 30px 32px 24px;
+  text-align: center;
+  background: linear-gradient(135deg, #587d63, #769782);
+  color: white;
+}
+
+.header .eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.header h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(28px, 7vw, 38px);
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.header p {
+  margin: 10px 0 0;
+  font-size: 14px;
+  text-transform: capitalize;
+  opacity: 0.88;
+}
+
+.account-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.account-bar button {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+}
+
+.main {
+  padding: 18px 24px 24px;
+}
+
+.prayer-list {
+  display: grid;
+}
+
+.prayer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 68px;
+  border-bottom: 1px solid #edf1ec;
+}
+
+.prayer-row h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.counter {
+  display: grid;
+  grid-template-columns: 42px 52px 42px;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid #dde6dd;
+  border-radius: 12px;
+  background: #f8faf7;
+  overflow: hidden;
+}
+
+.counter button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  color: #55745f;
+  font-size: 24px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.counter button:hover:not(:disabled) {
+  background: #e8efe7;
+  color: #375942;
+}
+
+.counter button:disabled {
+  color: #bdc7be;
+  cursor: default;
+}
+
+.counter span {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #eef4ed;
+  color: #486151;
+}
+
+.summary strong {
+  font-size: 24px;
+  color: #355941;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.actions button {
+  min-height: 48px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.actions button:active {
+  transform: translateY(1px);
+}
+
+.save-button {
+  border: 0;
+  background: #4d7259;
+  color: white;
+  box-shadow: 0 8px 18px rgba(77, 114, 89, 0.22);
+}
+
+.save-button:hover {
+  background: #435f4c;
+}
+
+.reset-button {
+  padding: 0 18px;
+  border: 1px solid #d8e1d8;
+  background: white;
+  color: #657269;
+}
+
+.status {
+  min-height: 20px;
+  margin: 8px 0 0;
+  text-align: center;
+  color: #6d7b70;
+  font-size: 13px;
+}
+
+.loading-message {
+  margin: 8px 0;
+  text-align: center;
+  color: #6d7b70;
+  font-size: 14px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #eef4ed;
+}
+
+.auth-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #66776b;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.auth-tabs button.active {
+  background: white;
+  color: #355941;
+  box-shadow: 0 2px 8px rgba(54, 82, 62, 0.1);
+}
+
+.auth-form label {
+  display: grid;
+  gap: 7px;
+  color: #46564a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid #d8e1d8;
+  border-radius: 10px;
+  outline: none;
+  background: #fbfcfa;
+  color: #27332c;
+  font: inherit;
+}
+
+.auth-form input:focus {
+  border-color: #6d9276;
+  box-shadow: 0 0 0 3px rgba(109, 146, 118, 0.15);
+}
+
+.auth-hint,
+.auth-error {
+  margin: -8px 0 0;
+  font-size: 13px;
+}
+
+.auth-hint {
+  color: #78877d;
+}
+
+.auth-error {
+  color: #a53d36;
+}
+
+.auth-submit {
+  min-height: 48px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.auth-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.history {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid #edf1ec;
+}
+
+.history-heading,
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.history-heading button {
+  border: 0;
+  background: transparent;
+  color: #78877d;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.history-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.history-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7f9f6;
+  font-size: 13px;
+  color: #748077;
+}
+
+.history-item strong {
+  color: #4d7259;
+}
+
+@media (max-width: 480px) {
+  .app-shell {
+    align-items: start;
+    padding: 0;
+  }
+
+  .prayer-card {
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .header {
+    border-radius: 0 0 24px 24px;
+  }
+
+  .main {
+    padding-inline: 18px;
+  }
+}
