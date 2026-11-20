@@ -16,8 +16,11 @@ npm run dev
 ## GitHub Pages
 
 1. Разверните API и PostgreSQL по инструкции [server/README.md](../server/README.md).
-2. В GitHub откройте **Settings → Secrets and variables → Actions → Variables** и добавьте переменную `VITE_API_URL` со значением HTTPS-адреса API, например `https://api.example.com` (без завершающего `/`).
-3. В **Settings → Pages** выберите источник **GitHub Actions**.
-4. Отправьте изменения в ветку `main`. Workflow автоматически соберёт и опубликует сайт.
+2. В Reg.ru удалите запись `A www → 109.172.94.72`, создайте `CNAME www → Khamirzoev.github.io` и добавьте `A api → 109.172.94.72`. Запись `A @` пока оставьте без изменений.
+3. В настройках репозитория откройте **Settings → Pages** и задайте custom domain `www.khamirzoev.ru`; выберите **GitHub Actions** как источник. После проверки DNS включите **Enforce HTTPS**.
+4. В **Settings → Secrets and variables → Actions → Variables** добавьте:
+   - `VITE_API_URL` = `https://api.khamirzoev.ru`
+   - `VITE_BASE_PATH` = `/`
+5. Отправьте изменения в `main`; workflow соберёт и опубликует сайт на корне `www.khamirzoev.ru`.
 
-Workflow задаёт путь сайта по имени репозитория. Для надёжной работы входа настройте собственный домен для Pages и API на поддомене этого же домена, чтобы браузер не блокировал cookie как сторонние.
+Если custom domain ещё не настроен, `VITE_BASE_PATH` можно не задавать: workflow использует путь проекта `/mama/`. Сайт и API на поддоменах `www` и `api` будут одним сайтом для браузерных cookie.

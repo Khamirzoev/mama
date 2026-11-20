@@ -29,7 +29,7 @@ sudo -u postgres createdb --owner=prayer_app prayer_counter
 
 ## HTTPS и API
 
-Для сайта на GitHub Pages API должен быть доступен по HTTPS: браузеры блокируют запросы с HTTPS-сайта к API по обычному HTTP. Самый простой и совместимый вариант — домен (например, `api.example.com`) с DNS A-записью на IP сервера и TLS-сертификатом. Для надёжной работы cookie авторизации используйте собственный домен также для Pages, например `example.com`, а API разместите на `api.example.com`.
+Для сайта на GitHub Pages API должен быть доступен по HTTPS: браузеры блокируют запросы с HTTPS-сайта к API по обычному HTTP. Для этого проекта используйте `api.khamirzoev.ru` с DNS A-записью на IP сервера и TLS-сертификатом. Сайт будет на `www.khamirzoev.ru`; эти поддомены одного домена позволяют браузеру передавать cookie авторизации.
 
 На сервере настройте reverse proxy (например, Nginx) на `127.0.0.1:3001` и запустите Node API как systemd-службу. В каталоге `server` установите production-зависимости:
 
@@ -42,7 +42,7 @@ npm ci --omit=dev
 ```env
 PORT=3001
 NODE_ENV=production
-CLIENT_ORIGIN=https://example.com
+CLIENT_ORIGIN=https://www.khamirzoev.ru
 DATABASE_URL=postgresql://prayer_app:ВАШ_ПАРОЛЬ@127.0.0.1:5432/prayer_counter
 SESSION_SECRET=СЛУЧАЙНЫЙ_СЕКРЕТ_НЕ_КОРОЧЕ_32_СИМВОЛОВ
 ```
@@ -51,6 +51,7 @@ SESSION_SECRET=СЛУЧАЙНЫЙ_СЕКРЕТ_НЕ_КОРОЧЕ_32_СИМВОЛ
 
 В настройках GitHub репозитория добавьте **Settings → Secrets and variables → Actions → Variables → New repository variable**:
 
-- `VITE_API_URL` — HTTPS origin API, например `https://api.example.com` (без завершающего `/`).
+- `VITE_API_URL` — `https://api.khamirzoev.ru` (без завершающего `/`).
+- `VITE_BASE_PATH` — `/` при использовании custom domain `www.khamirzoev.ru`.
 
-В `CLIENT_ORIGIN` укажите точный origin сайта, без пути `/mama/`. Workflow Pages соберёт клиент с адресом API из `VITE_API_URL`.
+В `CLIENT_ORIGIN` укажите точный HTTPS origin сайта, без пути. Workflow Pages соберёт клиент с адресом API из `VITE_API_URL`.
